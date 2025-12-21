@@ -1,7 +1,8 @@
-conda activate data_analysis
-uv で管理。
-推論コードを書いてそのコードのライブラリを出す。それだけdatasetに入れる。
-data_analysisである程度kaggle内のライブラリは弾かれる。
+conda では `data_analysis` 環境を有効化し、ライブラリ管理は `uv` で行う。
+推論コードを作成し、そのコードが **実際に使用するライブラリのみ** を抽出する。
+抽出したライブラリだけを Kaggle Dataset に含める。
+`data_analysis` 環境には Kaggle 標準で用意されているライブラリが多く含まれているため、
+それらで事前に除外する。
 
 
 ## 新しい実験を作成する
