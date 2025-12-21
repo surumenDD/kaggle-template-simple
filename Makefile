@@ -1,21 +1,73 @@
-.PHONY: run new list
+# Makefile (docker compose + experiments)
+
+SERVICE := dev
+WORKDIR ?= /work
+
+DOCKER_COMPOSE := docker compose
+RUN := $(DOCKER_COMPOSE) run --rm --workdir $(WORKDIR) $(SERVICE)
 
 EXP_ROOT := experiments
 TEMPLATE := $(EXP_ROOT)/exp000_sample
 PYTHON := python
 
-# 1. 算術演算(10#)を確実に行うため、bashを指定
 SHELL := /bin/bash
 
+.PHONY: help \
+	build up shell gpu-check python logs down clean \
+	new run list
+
+help:
+	@echo "Targets:"
+	@echo "  build      docker compose build"
+	@echo "  up         docker compose up -d"
+	@echo "  shell      docker compose run --rm で bash"
+	@echo "  gpu-check  torch CUDA チェック"
+	@echo "  python     python を起動"
+	@echo "  logs       ログ表示"
+	@echo "  down       停止"
+	@echo "  clean      生成物と未使用イメージの掃除"
+	@echo ""
+	@echo "Experiments:"
+	@echo "  new        新しい実験を作成 (例: make new NAME=hoge)"
+	@echo "  run        実験を実行 (例: make run EXP=13)"
+	@echo "  list       実験一覧を表示"
+
 # =========================
-# 新しい実験を作成する
+# docker compose
+# =========================
+build:
+	$(DOCKER_COMPOSE) build
+
+up:
+	$(DOCKER_COMPOSE) up -d
+
+shell:
+	$(RUN) bash
+
+gpu-check:
+	$(RUN) $(PYTHON) -c "import torch; print('torch', torch.__version__); print('cuda', torch.version.cuda); print('is_available', torch.cuda.is_available()); print('name', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'no gpu')"
+
+python:
+	$(RUN) $(PYTHON)
+
+logs:
+	$(DOCKER_COMPOSE) logs -f --tail=200
+
+down:
+	$(DOCKER_COMPOSE) down
+
+clean:
+	$(DOCKER_COMPOSE) down --remove-orphans
+	-docker image prune -f
+
+# =========================
+# experiments（ホスト側でファイル作成）
 # =========================
 new:
 	@if [ -z "$(NAME)" ]; then \
 		echo "ERROR: NAMEを指定してください (例: make new NAME=hoge)"; \
 		exit 1; \
 	fi
-	@# ディレクトリがない場合のために作成
 	@mkdir -p $(EXP_ROOT)
 	@LAST=$$(ls -d $(EXP_ROOT)/exp[0-9][0-9][0-9]_* 2>/dev/null \
 		| sed -E 's#.*/exp([0-9]{3})_.*#\1#' \
@@ -38,7 +90,7 @@ new:
 	cp $(TEMPLATE)/exp/000.yaml $$NEW_DIR/exp/000.yaml 2>/dev/null || echo "Warning: 000.yaml not found in template"
 
 # =========================
-# 実験を実行する
+# experiments（コンテナ内で実行）
 # =========================
 run:
 	@if [ -z "$(EXP)" ]; then \
@@ -50,11 +102,11 @@ run:
 		echo "ERROR: exp$$(printf "%03d" $(EXP)) が見つかりません"; \
 		exit 1; \
 	fi; \
-	echo "run: $$EXP_DIR/run.py"; \
-	cd $$EXP_DIR && $(PYTHON) run.py
+	echo "run: $$EXP_DIR/run.py (in container)"; \
+	$(RUN) bash -lc "cd $$EXP_DIR && $(PYTHON) run.py"
 
 # =========================
-# 実験一覧を表示
+# experiments（一覧）
 # =========================
 list:
 	@ls -d $(EXP_ROOT)/exp[0-9][0-9][0-9]_* 2>/dev/null | xargs -n 1 basename || echo "no experiments"
