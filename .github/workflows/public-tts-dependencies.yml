@@ -18,9 +18,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p runtime/wheels runtime/site-packages
-          python -m pip download --only-binary=:all: --dest runtime/wheels pyopenjtalk-plus==0.4.1.post8
-          python -m pip install --no-index --find-links runtime/wheels --target runtime/site-packages pyopenjtalk-plus==0.4.1.post8
+          mkdir -p runtime/site-packages
+          python -m pip install --only-binary=:all: --target runtime/site-packages pyopenjtalk-plus==0.4.1.post8
           PYTHONPATH="$PWD/runtime/site-packages" python - <<'PY'
           import json,pathlib,hashlib,wave,sys
           import pyopenjtalk
@@ -40,5 +39,5 @@ jobs:
           name: public-japanese-tts-runtime-linux-cp313
           path: runtime/
           retention-days: 1
-          compression-level: 0
+          compression-level: 6
           if-no-files-found: error
