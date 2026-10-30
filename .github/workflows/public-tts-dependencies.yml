@@ -1,4 +1,4 @@
-name: Public Japanese TTS dependencies
+name: Generic local localization handoff
 on:
   push:
     branches: [task/public-tts-dependencies-20261030]
@@ -7,37 +7,66 @@ on:
 permissions:
   contents: read
 jobs:
-  package:
+  handoff:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
-      - name: Package public dependencies and test speech
+          python-version: '3.12'
+      - name: Prepare public dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          python handoff_toolkit/build_docs.py
+          python -m pip install -r handoff_toolkit/requirements.txt
+      - name: Verify code and synthetic media only
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p runtime/site-packages
-          python -m pip install --only-binary=:all: --target runtime/site-packages pyopenjtalk-plus==0.4.1.post8
-          PYTHONPATH="$PWD/runtime/site-packages" python - <<'PY'
-          import json,pathlib,hashlib,wave,sys
-          import pyopenjtalk
-          import numpy as np
-          root=pathlib.Path('runtime')
-          x,sr=pyopenjtalk.tts('日本語の音声生成環境を確認しています。構図と色の使い方を学びます。')
-          x=np.asarray(x,dtype=np.int16)
-          assert len(x)>sr and np.max(np.abs(x.astype(np.int32)))>100
-          with wave.open(str(root/'test_ja.wav'),'wb') as w:
-              w.setnchannels(1);w.setsampwidth(2);w.setframerate(sr);w.writeframes(x.tobytes())
-          report={'python':sys.version,'engine':'pyopenjtalk-plus','sample_rate':sr,'duration':len(x)/sr,'module_file':pyopenjtalk.__file__,'files':{str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in root.rglob('*') if p.is_file()}}
-          (root/'runtime_test.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
-          print(json.dumps({k:v for k,v in report.items() if k!='files'},ensure_ascii=False))
+          cd handoff_toolkit
+          mkdir -p build_evidence
+          python - <<'PY'
+          import hashlib,json,pathlib,urllib.request
+          import toolkit
+          with urllib.request.urlopen(toolkit.FONT_URL,timeout=120) as r: data=r.read()
+          pathlib.Path('font_reference.json').write_text(json.dumps({'url':toolkit.FONT_URL,'sha256':hashlib.sha256(data).hexdigest(),'name':toolkit.FONT_NAME},indent=2)+'\n')
+          pathlib.Path('build_evidence/environment.json').write_text(json.dumps(toolkit.environment(),indent=2)+'\n')
+          PY
+          python -m compileall -q toolkit.py finish.py test_toolkit.py build_docs.py
+          python -m pip freeze > build_evidence/requirements-lock.txt
+          set +e
+          MEDIA_TESTS=1 python -m unittest -v test_toolkit > build_evidence/test.log 2>&1
+          result=$?
+          set -e
+          python - "$result" <<'PY'
+          import json,pathlib,sys
+          r=int(sys.argv[1])
+          pathlib.Path('build_evidence/test_result.json').write_text(json.dumps({'exit_code':r,'passed':r==0,'scope':'unit tests plus synthetic 1080p source and real local Japanese TTS; no private course data tested'},indent=2)+'\n')
+          print(pathlib.Path('build_evidence/test.log').read_text())
+          PY
+          exit "$result"
+      - name: Prepare distribution without fonts or private media
+        if: always()
+        run: |
+          mkdir -p distribution
+          cp handoff_toolkit/*.py handoff_toolkit/*.md handoff_toolkit/*.txt handoff_toolkit/*.json handoff_toolkit/*.cmd distribution/ 2>/dev/null || true
+          cp -r handoff_toolkit/build_evidence distribution/
+          python - <<'PY'
+          import hashlib,json,pathlib
+          p=pathlib.Path('distribution')
+          bad=[str(f) for f in p.rglob('*') if f.is_file() and f.suffix.lower() in {'.otf','.ttf','.ttc','.woff','.woff2','.mp4','.wav'}]
+          assert not bad,bad
+          hashes={str(f.relative_to(p)):hashlib.sha256(f.read_bytes()).hexdigest() for f in sorted(p.rglob('*')) if f.is_file()}
+          (p/'SHA256.json').write_text(json.dumps(hashes,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          print('Distribution files:',len(hashes))
           PY
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: public-japanese-tts-runtime-linux-cp313
-          path: runtime/
-          retention-days: 1
+          name: local-localization-handoff
+          path: distribution/
+          retention-days: 7
           compression-level: 6
           if-no-files-found: error
