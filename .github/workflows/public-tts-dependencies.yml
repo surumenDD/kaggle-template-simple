@@ -19,6 +19,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg
+          python handoff_toolkit/patch_release.py
           python handoff_toolkit/build_docs.py
           python -m pip install -r handoff_toolkit/requirements.txt
       - name: Verify code and synthetic media only
@@ -33,6 +34,7 @@ jobs:
           with urllib.request.urlopen(toolkit.FONT_URL,timeout=120) as r: data=r.read()
           pathlib.Path('font_reference.json').write_text(json.dumps({'url':toolkit.FONT_URL,'sha256':hashlib.sha256(data).hexdigest(),'name':toolkit.FONT_NAME},indent=2)+'\n')
           pathlib.Path('build_evidence/environment.json').write_text(json.dumps(toolkit.environment(),indent=2)+'\n')
+          print(json.dumps(toolkit.environment(),indent=2))
           PY
           python -m compileall -q toolkit.py finish.py test_toolkit.py build_docs.py
           python -m pip freeze > build_evidence/requirements-lock.txt
@@ -51,7 +53,8 @@ jobs:
         if: always()
         run: |
           mkdir -p distribution
-          cp handoff_toolkit/*.py handoff_toolkit/*.md handoff_toolkit/*.txt handoff_toolkit/*.json handoff_toolkit/*.cmd distribution/ 2>/dev/null || true
+          cp handoff_toolkit/toolkit.py handoff_toolkit/finish.py handoff_toolkit/test_toolkit.py distribution/
+          cp handoff_toolkit/*.md handoff_toolkit/*.txt handoff_toolkit/*.json handoff_toolkit/*.cmd distribution/ 2>/dev/null || true
           cp -r handoff_toolkit/build_evidence distribution/
           python - <<'PY'
           import hashlib,json,pathlib
